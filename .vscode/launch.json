@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug MCU",
+            "type": "cortex-debug",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "executable": "${workspaceFolder}/build/zephyr/zephyr.elf",
+            "servertype": "openocd",
+            "configFiles": [
+                "${workspaceFolder}/config/openocd_dap.cfg"
+            ],
+            "searchDir": [
+                "D:/Zephyr/zephyr-sdk-0.16.8/sysroots/AMD64-pokysdk-linux/usr/share/openocd/scripts"
+            ],
+            "gdbPath": "D:/Zephyr/zephyr-sdk-0.16.8/arm-zephyr-eabi/bin/arm-zephyr-eabi-gdb.exe",
+            "serverpath": "C:/Program Files/Path/openocd/bin/openocd.exe",
+            "runToEntryPoint": "main",
+            "svdFile": "${workspaceFolder}/build/zephyr/zephyr.svd"
+        }
+    ]
+}

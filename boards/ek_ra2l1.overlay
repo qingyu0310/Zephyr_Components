@@ -1,0 +1,38 @@
+// EK-RA2L1 设备树 overlay
+// ioport 编号对应: ioport0=P0xx, ioport1=P1xx, ..., ioport5=P5xx
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+	/delete-node/ leds;
+
+	leds {
+		compatible = "gpio-leds";
+		led0: led_0 {
+			gpios = <&ioport4 3 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		};
+		led1: led_1 {
+			gpios = <&ioport4 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		};
+		led2: led_2 {
+			gpios = <&ioport4 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		};
+	};
+};
+
+/ {
+	keys {
+		compatible = "gpio-keys";
+		key0: key_0 {
+			gpios = <&ioport0 1 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		};
+		key1: key_1 {
+			gpios = <&ioport0 2 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		};
+	};
+};
+
+
+
+
+

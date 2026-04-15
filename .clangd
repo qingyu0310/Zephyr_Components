@@ -1,0 +1,26 @@
+CompileFlags:
+  CompilationDatabase: build
+  Remove:
+    - -mthumb-interwork
+    - -fno-printf-return-value
+    - -fno-reorder-functions
+    - --param=min-pagesize=*
+    - -fmacro-prefix-map=*
+    - -specs=picolibc.specs
+    - -mfp16-format=ieee
+  Compiler: D:/Zephyr/zephyr-sdk-0.16.8/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc.exe
+
+---
+Diagnostics:
+  UnusedIncludes: None
+  Suppress:
+    - unused-includes
+    - unknown_typename
+    - unknown_typename_suggest
+    - typename_requires_specqual
+    - missing_kconfig_param
+    - undeclared_var_use
+    - pp_file_not_found
+    - unused-variable
+    - unused-but-set-variable
+    - unused-const-variable

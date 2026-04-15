@@ -1,0 +1,22 @@
+{
+    "clangd.path": "C:/Users/33527/AppData/Roaming/Code/User/globalStorage/llvm-vs-code-extensions.vscode-clangd/install/21.1.0/clangd_21.1.0/bin/clangd.exe",
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build",
+        "--query-driver=D:/Zephyr/zephyr-sdk-0.16.8/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc.exe"
+    ],
+    "terminal.integrated.env.windows": {
+        "ZEPHYR_BASE": "D:\\Zephyr\\zephyr",
+        "VIRTUAL_ENV": "D:\\Zephyr\\.venv",
+        "PATH": "D:\\Zephyr\\.venv\\Scripts;${env:PATH}"
+    },
+    "terminal.integrated.profiles.windows": {
+        "Zephyr PowerShell": {
+            "source": "PowerShell",
+            "args": ["-NoExit", "-Command", "& 'D:\\Zephyr\\.venv\\Scripts\\Activate.ps1'"]
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "Zephyr PowerShell",
+
+    /* --- DeviceTree for the Zephyr Project (trond-snekvik.devicetree) --- */
+    "devicetree.defaultBoard": "ek_ra2l1",
+}
