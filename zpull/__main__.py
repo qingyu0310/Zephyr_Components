@@ -204,6 +204,25 @@ def _copy_tree(src_root: Path, dst_root: Path, stage: str = "sync"):
             shutil.copy2(src, dst)
 
 
+def _mirror_dir(src_dir: Path, dst_dir: Path):
+    for dst in list(dst_dir.iterdir()):
+        if dst.name in EXCLUDE:
+            continue
+
+        src = src_dir / dst.name
+        if src.exists():
+            if src.is_dir() and dst.is_dir():
+                _mirror_dir(src, dst)
+            continue
+
+        if dst.is_dir():
+            print(f"[snapshot] remove dir: {dst}")
+            rmtree(dst)
+        else:
+            print(f"[snapshot] remove file: {dst}")
+            dst.unlink()
+
+
 def _mirror_tree(src_root: Path, dst_root: Path):
     for dst in list(dst_root.iterdir()):
         if dst.name not in SNAPSHOT_PURGE_EXCLUDE:
@@ -222,6 +241,8 @@ def _mirror_tree(src_root: Path, dst_root: Path):
 
         src = src_root / dst.name
         if src.exists():
+            if src.is_dir() and dst.is_dir():
+                _mirror_dir(src, dst)
             continue
 
         if dst.is_dir():
