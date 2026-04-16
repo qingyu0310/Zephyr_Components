@@ -17,7 +17,7 @@ from pathlib import Path
 from .utils import load_yaml, rmtree
 from .repo import Repo
 from .resolver import resolve_deps
-from .extractor import extract_to
+from .extractor import extract_to, replace_from
 
 EXCLUDE = {
     "build",
@@ -448,13 +448,13 @@ def main():
             rmtree(tmp)
 
         if tag == "template":
-            # 骨架模式: sparse checkout 只拉 always 目录
+            # 骨架模式: 从 template 标签只拉 always 目录
             always = mod.get("always", []) or []
             shallow = set(mod.get("shallow", []))
-            repo = Repo(_resolve_module_repo(mod, "repo"), mod.get("ref", "main"), tmp)
-            print(f"[skeleton] 从 '{mod.get('ref', 'main')}' 拉取骨架")
+            repo = Repo(_resolve_module_repo(mod, "repo"), "template", tmp)
+            print("[skeleton] 从 'template' 拉取骨架")
             repo.clone_sparse(always)
-            extract_to(tmp, root, shallow_dirs=shallow)
+            replace_from(tmp, root, set(always), shallow_dirs=shallow)
         else:
             # 完整版本: 从 git 标签全量拉取
             repo = Repo(_resolve_module_repo(mod, "repo"), tag, tmp)

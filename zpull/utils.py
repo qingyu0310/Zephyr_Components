@@ -1,12 +1,34 @@
-import os, shutil, stat, subprocess
+import os, shutil, stat, subprocess, time
 from pathlib import Path
 
 GIT_RUN_TIMEOUT = 600
+RMTREE_RETRIES = 8
+RMTREE_RETRY_DELAY = 0.25
 
 
 def rmtree(path: Path):
-    shutil.rmtree(str(path),
-                  onerror=lambda f, p, _: (os.chmod(p, stat.S_IWRITE), f(p)))
+    if not path.exists():
+        return
+
+    last_error = None
+
+    def _retry_remove(func, target, _):
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+
+    for attempt in range(RMTREE_RETRIES):
+        try:
+            shutil.rmtree(str(path), onerror=_retry_remove)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError as exc:
+            last_error = exc
+            if attempt == RMTREE_RETRIES - 1:
+                break
+            time.sleep(RMTREE_RETRY_DELAY * (attempt + 1))
+
+    raise last_error
 
 
 def load_yaml(path: Path) -> dict:
