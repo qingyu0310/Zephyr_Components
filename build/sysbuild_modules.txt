@@ -1,1 +1,0 @@
-"mcuboot":"D:/Zephyr/bootloader/mcuboot":"D:/Zephyr/bootloader/mcuboot/boot/zephyr/sysbuild"
