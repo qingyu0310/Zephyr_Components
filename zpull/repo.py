@@ -41,3 +41,11 @@ class Repo:
         print(f"  [sparse+] +{sorted(new)}")
         run_git(["sparse-checkout", "set", "--skip-checks"] + sorted(existing | new), cwd=str(self.dir))
         run_git(["checkout"], cwd=str(self.dir))
+
+    def sparse_list(self) -> list[str]:
+        r = subprocess.run(["git", "sparse-checkout", "list"],
+                           capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL, cwd=str(self.dir))
+        if r.returncode != 0 or not r.stdout.strip():
+            return []
+        return r.stdout.strip().splitlines()

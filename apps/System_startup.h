@@ -11,10 +11,9 @@
 
 #pragma once
 
-#include "bsp_uart.hpp"
+#include "zephyr/device.h"
+#include "trd_servo.h"
 
 void System_Bsp_Init();
 void System_Modules_Init();
 void System_Thread_Start();
-
-void uart1_callback_func(const uint8_t* data, uint16_t len, void* arg);

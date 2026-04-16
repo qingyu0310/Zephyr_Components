@@ -1,0 +1,4 @@
+name: servo
+description: 舵机控制模块
+depends:
+  - path: bsp/bsp_pwm

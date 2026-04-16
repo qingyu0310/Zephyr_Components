@@ -34,13 +34,25 @@ CLEAN_KEEP = {"zpull", ".venv", ".git"}
 GIT_CLONE_TIMEOUT = 600
 
 
-def build_sparse_list(args_paths, always, sparse_default):
+def build_sparse_list(args_paths, sparse_default):
     paths = list(args_paths)
-    for a in always:
-        if a not in paths:
-            paths.append(a)
-    print(f"  拉取指定路径 + 骨架: {paths}")
+    if not paths:
+        paths = list(sparse_default)
+    print(f"  拉取指定路径: {paths}")
     return paths
+
+
+def build_shallow_keep(paths: list[str], shallow_dirs: set[str]) -> dict[str, set[str]]:
+    keep: dict[str, set[str]] = {}
+    for path in paths:
+        parts = path.replace("\\", "/").split("/")
+        if len(parts) < 2:
+            continue
+        parent, child = parts[0], parts[1]
+        if parent not in shallow_dirs:
+            continue
+        keep.setdefault(parent, set()).add(child)
+    return keep
 
 
 def _git(args, cwd, capture=False, show=False, timeout=None, env=None):
@@ -469,13 +481,11 @@ def main():
 
     # --- 模块模式: sparse checkout + 依赖解析 ---
     for i, mod in enumerate(load_yaml(cfg_path).get("modules", [])):
-        always  = mod.get("always", []) or []
-
+        sparse_default = mod.get("sparse", []) or []
         if not args.paths:
-            sparse_default = mod.get("sparse", []) or []
-            sparse = build_sparse_list(sparse_default, always, sparse_default)
+            sparse = build_sparse_list([], sparse_default)
         else:
-            sparse = build_sparse_list(list(args.paths), always, mod.get("sparse", []) or [])
+            sparse = build_sparse_list(list(args.paths), sparse_default)
 
         if tmp.exists():
             rmtree(tmp)
@@ -498,8 +508,9 @@ def main():
             print(f"  [WARN] 依赖解析异常: {e}")
         print(f"  共 {len(resolved)} 个模块解析完成")
 
-        shallow = set(mod.get("shallow", [])) if not args.paths else None
-        extract_to(tmp, root, shallow_dirs=shallow)
+        shallow = set(mod.get("shallow", []))
+        shallow_keep = build_shallow_keep(repo.sparse_list(), shallow)
+        extract_to(tmp, root, shallow_dirs=shallow, shallow_keep=shallow_keep)
         rmtree(tmp)
         print(f"  [clean] 临时目录已删除")
 

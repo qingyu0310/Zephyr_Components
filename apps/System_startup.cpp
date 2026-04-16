@@ -10,21 +10,22 @@
  */
 
 #include "System_startup.h"
-
-static BspUartObj uart_obj_{};
+#include "Servo.hpp"
 
 void System_Bsp_Init()
 {
-    bsp_uart_init(uart_obj_, DEVICE_DT_GET(DT_NODELABEL(usart1)));
-    bsp_uart_set_rx_callback(uart_obj_, uart1_callback_func, &uart_obj_);
+    
 }
 
 void System_Modules_Init()
 {
-    
+    const pwm_dt_spec spec = PWM_DT_SPEC_GET(DT_NODELABEL(servo0));
+    Servo ins{};
+    ins.Init(&spec, 20000);
+    thread::servo::thread_.Join(ins);
 }
 
 void System_Thread_Start()
 {
-    
+    thread::servo::thread_start(5);
 }
