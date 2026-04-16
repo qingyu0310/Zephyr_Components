@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "trd_key.h"
+
 void System_Bsp_Init();
 void System_Modules_Init();
 void System_Thread_Start();

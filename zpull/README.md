@@ -31,7 +31,7 @@ my_project/
 
 ```yaml
 modules:
-  - repo: git@github.com:qingyu0310/Zephyr_Components.git
+  - repo: git@github.com:qingyu0620/Zephyr_Components.git
     ref: main                                          # Git 分支或标签
     sparse: [modules/led, modules/key]                 # 默认拉取的模块路径
     always: [apps, thread, .vscode, src, .clangd,      # 每次拉取都会包含的骨架文件
@@ -108,6 +108,23 @@ python -m z_regulator
 python -m zpull --config path/to/my_modules.yaml modules/led
 ```
 
+### 多账号 SSH 使用
+
+共享的 `modules.yaml` 应保持通用仓库地址，例如：
+
+```yaml
+repo: git@github.com:qingyu0310/Zephyr_Components.git
+```
+
+如果你本机需要通过 SSH 别名切换账号，不要改共享文件，直接在本机设置环境变量：
+
+```bash
+$env:ZPULL_GIT_HOST_ALIAS="github-qingyu0310"
+python -m zpull --push-tag uart
+```
+
+这样 `zpull` 会在运行时把仓库地址临时改写为 `git@github-qingyu0310:...`，其他人仍可继续使用默认的 `git@github.com:...`。
+
 ### 上传项目快照为标签
 
 ```bash
@@ -115,10 +132,15 @@ python -m zpull --push-tag uart
 ```
 
 这条命令会：
-1. 自动检测修改/新增的文件，提交到当前分支（main）并推送
-2. 在游离 HEAD 上用当前工作区状态（包含删除的模块）创建 commit
-3. 打标签并推送
-4. 自动返回原分支，工作区恢复到分支状态
+1. 读取 modules.yaml 中的 repo 和 ref，克隆目标仓库到临时目录
+2. 把当前工程的修改/新增文件同步到目标分支并推送（不删除远端已有文件）
+3. 在游离 HEAD 上用当前工程完整状态创建快照 commit（包含本地删除带来的缺失）
+4. 打标签并推送到目标仓库
+
+说明：
+- 当前工程目录本身不需要是 Git 仓库
+- 上传目标始终是 modules.yaml 指向的远端仓库
+- modules.yaml 中的 ref 必须是可推送分支，不能是标签
 
 **典型工作流：**
 
@@ -129,7 +151,7 @@ Remove-Item -Recurse -Force modules/led, modules/servo, bsp/bsp_gpio
 # 2. 一键上传标签
 python -m zpull --push-tag uart
 
-# 完成! main 上所有模块不受影响，uart 标签是干净的项目快照
+# 完成! 远端 main 上保留正常模块更新，uart 标签是当前工程的干净项目快照
 ```
 
 ---

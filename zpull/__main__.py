@@ -12,14 +12,15 @@
     python -m zpull --config modules.yaml      # 指定配置文件
 """
 
-import argparse, os, subprocess, sys
+import argparse, os, shutil, subprocess, sys
 from pathlib import Path
 from .utils import load_yaml, rmtree
 from .repo import Repo
 from .resolver import resolve_deps
 from .extractor import extract_to
 
-EXCLUDE = {"build", "__pycache__", ".tmp_clone"}
+EXCLUDE = {"build", "__pycache__", ".git", ".tmp_clone", ".tmp_list", ".tmp_push_tag"}
+GIT_CLONE_TIMEOUT = 600
 
 
 def build_sparse_list(args_paths, always, sparse_default):
@@ -31,15 +32,42 @@ def build_sparse_list(args_paths, always, sparse_default):
     return paths
 
 
-def _git(args, cwd, capture=False, show=False):
+def _git(args, cwd, capture=False, show=False, timeout=None, env=None):
     kw = dict(cwd=str(cwd), stdin=subprocess.DEVNULL)
+    run_env = os.environ.copy()
+    run_env.setdefault("GIT_TERMINAL_PROMPT", "0")
+    if env:
+        run_env.update(env)
+    kw["env"] = run_env
     if not show:
         kw.update(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if capture:
         kw.update(capture_output=True, text=True)
         kw.pop("stdout", None)
         kw.pop("stderr", None)
+    if timeout is not None:
+        kw["timeout"] = timeout
     r = subprocess.run(["git"] + args, **kw)
+    return r
+
+
+def _git_checked(args, cwd, capture=False, show=False, action=None, timeout=None, env=None):
+    try:
+        r = _git(args, cwd, capture=capture, show=show, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        msg = action or f"git {' '.join(args)}"
+        print(f"错误: {msg} 超时")
+        print("可能原因: SSH 认证未配置、网络不可达，或 GitHub 连接过慢")
+        sys.exit(1)
+
+    if r.returncode != 0:
+        msg = action or f"git {' '.join(args)}"
+        print(f"错误: {msg} 失败")
+        if capture:
+            details = (r.stderr or r.stdout or "").strip()
+            if details:
+                print(details)
+        sys.exit(r.returncode)
     return r
 
 
@@ -48,13 +76,81 @@ def _should_exclude(path: str) -> bool:
     return bool(EXCLUDE & set(parts))
 
 
-def list_tags(cfg_path: Path):
+def _load_primary_module(cfg_path: Path) -> dict:
     mod = load_yaml(cfg_path).get("modules", [None])[0]
     if not mod:
         print("错误: modules.yaml 中没有模块定义")
         sys.exit(1)
+    return mod
 
-    repo_url = mod["repo"]
+
+def _resolve_repo_url(repo_url: str) -> str:
+    ssh_host_alias = os.environ.get("ZPULL_GIT_HOST_ALIAS", "").strip()
+    if not ssh_host_alias:
+        return repo_url
+
+    if repo_url.startswith("git@") and ":" in repo_url:
+        _, remainder = repo_url.split("@", 1)
+        _, path = remainder.split(":", 1)
+        return f"git@{ssh_host_alias}:{path}"
+
+    return repo_url
+
+
+def _clone_repo(repo_url: str, ref: str, clone_dir: Path):
+    if clone_dir.exists():
+        rmtree(clone_dir)
+    git_env = None
+    if repo_url.startswith("git@") or repo_url.startswith("ssh://"):
+        git_env = {"GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o ConnectTimeout=10"}
+    print(f"[push-tag] 正在克隆: {repo_url} ({ref})")
+    _git_checked([
+        "clone", "--progress", "--depth", "1", "--branch", ref, repo_url, str(clone_dir)
+    ], clone_dir.parent, show=True, action=f"克隆仓库 {repo_url}@{ref}", timeout=GIT_CLONE_TIMEOUT, env=git_env)
+
+
+def _copy_tree(src_root: Path, dst_root: Path, stage: str = "sync"):
+    for src in src_root.iterdir():
+        if src.name in EXCLUDE:
+            continue
+
+        dst = dst_root / src.name
+        kind = "dir" if src.is_dir() else "file"
+        print(f"[{stage}] {kind}: {src.name}")
+        if src.is_dir():
+            shutil.copytree(
+                src,
+                dst,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(*EXCLUDE),
+            )
+        else:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+
+
+def _mirror_tree(src_root: Path, dst_root: Path):
+    for dst in list(dst_root.iterdir()):
+        if dst.name in EXCLUDE:
+            continue
+
+        src = src_root / dst.name
+        if src.exists():
+            continue
+
+        if dst.is_dir():
+            print(f"[snapshot] remove dir: {dst.name}")
+            rmtree(dst)
+        else:
+            print(f"[snapshot] remove file: {dst.name}")
+            dst.unlink()
+
+    _copy_tree(src_root, dst_root, stage="snapshot")
+
+
+def list_tags(cfg_path: Path):
+    mod = _load_primary_module(cfg_path)
+    repo_url = _resolve_repo_url(mod["repo"])
     print(f"仓库: {repo_url}")
     print(f"\n标签 (Tags):")
     r = subprocess.run(
@@ -71,12 +167,8 @@ def list_tags(cfg_path: Path):
 
 
 def list_modules(cfg_path: Path):
-    mod = load_yaml(cfg_path).get("modules", [None])[0]
-    if not mod:
-        print("错误: modules.yaml 中没有模块定义")
-        sys.exit(1)
-
-    repo_url = mod["repo"]
+    mod = _load_primary_module(cfg_path)
+    repo_url = _resolve_repo_url(mod["repo"])
     ref = mod.get("ref", "main")
     root = cfg_path.parent.parent
 
@@ -113,73 +205,56 @@ def list_modules(cfg_path: Path):
         print("  (无法获取)")
 
 
-def push_tag(tag: str, root: Path):
-    # 检查标签是否已存在
-    r = _git(["tag", "-l", tag], root, capture=True)
-    if tag in r.stdout.strip().splitlines():
-        print(f"错误: 标签 '{tag}' 已存在")
-        print(f"  删除后重试: git tag -d {tag} && git push origin :refs/tags/{tag}")
-        sys.exit(1)
+def push_tag(tag: str, root: Path, cfg_path: Path):
+    mod = _load_primary_module(cfg_path)
+    repo_url = _resolve_repo_url(mod["repo"])
+    ref = mod.get("ref", "main")
+    tmp = root / ".tmp_push_tag"
 
-    # 获取当前分支
-    r = _git(["rev-parse", "--abbrev-ref", "HEAD"], root, capture=True)
+    print(f"[push-tag] 目标仓库: {repo_url}")
+    print(f"[push-tag] 基准分支: {ref}")
+    _clone_repo(repo_url, ref, tmp)
+
+    r = _git_checked(["rev-parse", "--abbrev-ref", "HEAD"], tmp, capture=True, action="获取远端仓库当前分支")
     branch = r.stdout.strip()
     if branch == "HEAD":
-        print("错误: 当前处于游离 HEAD，请先 checkout 到分支")
+        rmtree(tmp)
+        print(f"错误: modules.yaml 中的 ref='{ref}' 不是可推送分支")
         sys.exit(1)
 
-    # --- 1. 记录当前被删除的文件 ---
-    r = _git(["diff", "--name-only", "--diff-filter=D"], root, capture=True)
-    deleted_files = [f for f in r.stdout.strip().splitlines() if f]
+    r = _git_checked(["ls-remote", "--tags", "origin", f"refs/tags/{tag}"], tmp, capture=True, action="检查远端标签")
+    if r.stdout.strip():
+        rmtree(tmp)
+        print(f"错误: 远端标签 '{tag}' 已存在")
+        sys.exit(1)
 
-    # --- 2. 提交模块更新 (修改 + 新增, 不含删除) 到当前分支 ---
-    r = _git(["diff", "--name-only", "--diff-filter=d"], root, capture=True)
-    modified = [f for f in r.stdout.strip().splitlines() if f]
+    print(f"[push-tag] 同步当前工程到远端分支 {branch}（不删除远端已有文件）")
+    _copy_tree(root, tmp, stage="branch")
+    _git_checked(["add", "--all"], tmp, action="暂存分支更新")
 
-    r = _git(["ls-files", "--others", "--exclude-standard"], root, capture=True)
-    untracked = [f for f in r.stdout.strip().splitlines() if f]
-
-    to_commit = [f for f in modified + untracked if not _should_exclude(f)]
-
-    if to_commit:
-        print(f"[push-tag] 提交模块更新到 {branch}:")
-        for f in to_commit:
-            print(f"  + {f}")
-        _git(["add", "--"] + to_commit, root)
-        _git(["commit", "-m", f"update: {tag}"], root)
-        _git(["push", "origin", branch], root, show=True)
+    r = _git(["diff", "--cached", "--quiet"], tmp)
+    if r.returncode != 0:
+        _git_checked(["commit", "-m", f"update: {tag}"], tmp, action="提交分支更新")
+        print(f"[push-tag] 推送分支进度: {branch}")
+        _git_checked(["push", "--progress", "origin", branch], tmp, show=True, action=f"推送分支 {branch}")
     else:
         print(f"[push-tag] 无模块更新需要推送到 {branch}")
 
-    # --- 3. 游离 HEAD 创建标签 ---
     print(f"[push-tag] 创建标签 '{tag}'")
-    _git(["checkout", "--detach"], root)
+    _git_checked(["checkout", "--detach"], tmp, action="切换到游离 HEAD")
+    _mirror_tree(root, tmp)
+    _git_checked(["add", "--all"], tmp, action="暂存标签快照")
 
-    pathspec = [".", ":!build", ":!*/__pycache__", ":!.tmp_clone"]
-    _git(["add", "-A", "--"] + pathspec, root)
-
-    r = _git(["diff", "--cached", "--quiet"], root)
+    r = _git(["diff", "--cached", "--quiet"], tmp)
     if r.returncode != 0:
-        _git(["commit", "-m", f"{tag}: project snapshot"], root)
+        _git_checked(["commit", "-m", f"{tag}: project snapshot"], tmp, action="提交标签快照")
 
-    _git(["tag", tag], root)
-    _git(["push", "origin", tag], root, show=True)
-    print(f"  标签 '{tag}' 已推送")
+    _git_checked(["tag", tag], tmp, action=f"创建标签 {tag}")
+    print(f"[push-tag] 推送标签进度: {tag}")
+    _git_checked(["push", "--progress", "origin", tag], tmp, show=True, action=f"推送标签 {tag}")
+    print(f"  标签 '{tag}' 已推送到 {repo_url}")
 
-    # --- 4. 返回原分支, 重新删除之前被删的文件 ---
-    _git(["checkout", branch], root)
-    if deleted_files:
-        for f in deleted_files:
-            p = root / f.replace("/", os.sep)
-            if p.exists():
-                p.unlink()
-        # 清理空目录
-        for f in deleted_files:
-            d = (root / f.replace("/", os.sep)).parent
-            while d != root and d.exists() and not any(d.iterdir()):
-                d.rmdir()
-                d = d.parent
-    print(f"  已返回 {branch} 分支 (工作区保持不变)")
+    rmtree(tmp)
     print("\n=== 完成 ===")
 
 
@@ -198,7 +273,7 @@ def main():
 
     # --- --push-tag 模式 ---
     if args.push_tag:
-        push_tag(args.push_tag, root)
+        push_tag(args.push_tag, root, cfg_path)
         return
 
     # --- list 子命令 ---
@@ -260,13 +335,13 @@ def main():
             # 骨架模式: sparse checkout 只拉 always 目录
             always = mod.get("always", []) or []
             shallow = set(mod.get("shallow", []))
-            repo = Repo(mod["repo"], mod.get("ref", "main"), tmp)
+            repo = Repo(_resolve_repo_url(mod["repo"]), mod.get("ref", "main"), tmp)
             print(f"[skeleton] 从 '{mod.get('ref', 'main')}' 拉取骨架")
             repo.clone_sparse(always)
             extract_to(tmp, root, shallow_dirs=shallow)
         else:
             # 完整版本: 从 git 标签全量拉取
-            repo = Repo(mod["repo"], tag, tmp)
+            repo = Repo(_resolve_repo_url(mod["repo"]), tag, tmp)
             print(f"[tag] 从标签 '{tag}' 完整拉取")
             repo.clone_full()
             extract_to(tmp, root)
@@ -287,9 +362,9 @@ def main():
 
         if tmp.exists():
             rmtree(tmp)
-        repo = Repo(mod["repo"], mod.get("ref", "main"), tmp)
+        repo = Repo(_resolve_repo_url(mod["repo"]), mod.get("ref", "main"), tmp)
 
-        print(f"[{i+1}] 克隆 {mod['repo']}")
+        print(f"[{i+1}] 克隆 {_resolve_repo_url(mod['repo'])}")
         if sparse:
             print(f"  sparse: {sparse}")
             repo.clone_sparse(sparse)

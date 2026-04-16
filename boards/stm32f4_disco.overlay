@@ -8,13 +8,17 @@
 		led0: led_0 {
 			gpios = <&gpiof 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 		};
-		led1: led_1 {
-			gpios = <&gpiof 10 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
-		};
 	};
 };
 
-
+/ {
+	keys {
+		compatible = "gpio-keys";
+		key0: key_0 {
+			gpios = <&gpioe 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		};
+	};
+};
 
 
 

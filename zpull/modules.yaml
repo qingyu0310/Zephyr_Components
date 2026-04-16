@@ -4,7 +4,7 @@
 # shallow: 骨架模式下只拉文件不拉子目录的路径
 # 内部依赖 (path: xxx) 会自动追加 sparse checkout
 modules:
-  - repo: git@github.com:qingyu0620/Zephyr_Components.git
+  - repo: git@github.com:qingyu0310/Zephyr_Components.git
     ref: main
     sparse: [modules/led, modules/key, bsp/bsp_uart]
     always: [apps, thread, .vscode, src, .clangd, boards, config, prj.conf]
