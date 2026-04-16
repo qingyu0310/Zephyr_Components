@@ -29,6 +29,7 @@ EXCLUDE = {
     ".venv",
     "compile_commands.json",
 }
+SNAPSHOT_PURGE_EXCLUDE = EXCLUDE - {".git"}
 CLEAN_KEEP = {"zpull", ".venv", ".git"}
 GIT_CLONE_TIMEOUT = 600
 
@@ -204,6 +205,17 @@ def _copy_tree(src_root: Path, dst_root: Path, stage: str = "sync"):
 
 
 def _mirror_tree(src_root: Path, dst_root: Path):
+    for dst in list(dst_root.iterdir()):
+        if dst.name not in SNAPSHOT_PURGE_EXCLUDE:
+            continue
+
+        if dst.is_dir():
+            print(f"[snapshot] purge excluded dir: {dst.name}")
+            rmtree(dst)
+        else:
+            print(f"[snapshot] purge excluded file: {dst.name}")
+            dst.unlink()
+
     for dst in list(dst_root.iterdir()):
         if dst.name in EXCLUDE:
             continue

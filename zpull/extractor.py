@@ -9,7 +9,7 @@ def extract_to(clone_dir: Path, project_root: Path,
     shallow_dirs = shallow_dirs or set()
     for src in sorted(clone_dir.iterdir()):
         name = src.name
-        if name in EXCLUDE:
+        if name in EXCLUDE or name in {"build", "__pycache__", ".venv", "compile_commands.json"} or name.startswith(".tmp_"):
             continue
         dest = project_root / name
         is_shallow = name in shallow_dirs
