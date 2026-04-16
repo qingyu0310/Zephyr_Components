@@ -19,7 +19,17 @@ from .repo import Repo
 from .resolver import resolve_deps
 from .extractor import extract_to
 
-EXCLUDE = {"build", "__pycache__", ".git", ".tmp_clone", ".tmp_list", ".tmp_push_tag"}
+EXCLUDE = {
+    "build",
+    "__pycache__",
+    ".git",
+    ".tmp_clone",
+    ".tmp_list",
+    ".tmp_push_tag",
+    ".venv",
+    "compile_commands.json",
+}
+CLEAN_KEEP = {"zpull", ".venv", ".git"}
 GIT_CLONE_TIMEOUT = 600
 
 
@@ -76,6 +86,37 @@ def _should_exclude(path: str) -> bool:
     return bool(EXCLUDE & set(parts))
 
 
+def clean_project(root: Path, assume_yes: bool = False):
+    to_remove = [entry for entry in sorted(root.iterdir(), key=lambda item: item.name)
+                 if entry.name not in CLEAN_KEEP]
+
+    if not to_remove:
+        print("[clean] 没有需要删除的内容")
+        return
+
+    print("[clean] 将删除以下内容:")
+    for entry in to_remove:
+        suffix = "/" if entry.is_dir() else ""
+        print(f"  - {entry.name}{suffix}")
+
+    if not assume_yes:
+        answer = input("继续删除? 输入 yes 确认: ").strip().lower()
+        if answer != "yes":
+            print("[clean] 已取消")
+            return
+
+    for entry in to_remove:
+        if entry.is_dir():
+            rmtree(entry)
+        else:
+            entry.unlink()
+        suffix = "/" if entry.is_dir() else ""
+        print(f"[clean] 已删除 {entry.name}{suffix}")
+
+    print("[clean] 当前工程已清空，仅保留 zpull 和本地环境")
+    print("[clean] 现在可以重新执行下拉命令")
+
+
 def _load_primary_module(cfg_path: Path) -> dict:
     mod = load_yaml(cfg_path).get("modules", [None])[0]
     if not mod:
@@ -84,8 +125,41 @@ def _load_primary_module(cfg_path: Path) -> dict:
     return mod
 
 
+def _load_local_settings() -> dict:
+    settings_path = Path.home() / ".zpull.json"
+    if not settings_path.exists():
+        return {}
+
+    try:
+        import json
+        with open(settings_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as exc:
+        print(f"警告: 读取本地配置失败: {settings_path}")
+        print(str(exc))
+        return {}
+
+    return data if isinstance(data, dict) else {}
+
+
+def _resolve_module_repo(mod: dict, key: str = "repo") -> str:
+    repo_url = str(mod.get(key, "")).strip()
+    if not repo_url and key == "push_repo":
+        repo_url = str(mod.get("repo", "")).strip()
+
+    if not repo_url:
+        print(f"错误: modules.yaml 缺少字段 {key}")
+        sys.exit(1)
+
+    return _resolve_repo_url(repo_url)
+
+
 def _resolve_repo_url(repo_url: str) -> str:
-    ssh_host_alias = os.environ.get("ZPULL_GIT_HOST_ALIAS", "").strip()
+    local_settings = _load_local_settings()
+    ssh_host_alias = os.environ.get(
+        "ZPULL_GIT_HOST_ALIAS",
+        str(local_settings.get("git_host_alias", "")),
+    ).strip()
     if not ssh_host_alias:
         return repo_url
 
@@ -150,7 +224,7 @@ def _mirror_tree(src_root: Path, dst_root: Path):
 
 def list_tags(cfg_path: Path):
     mod = _load_primary_module(cfg_path)
-    repo_url = _resolve_repo_url(mod["repo"])
+    repo_url = _resolve_module_repo(mod, "repo")
     print(f"仓库: {repo_url}")
     print(f"\n标签 (Tags):")
     r = subprocess.run(
@@ -168,7 +242,7 @@ def list_tags(cfg_path: Path):
 
 def list_modules(cfg_path: Path):
     mod = _load_primary_module(cfg_path)
-    repo_url = _resolve_repo_url(mod["repo"])
+    repo_url = _resolve_module_repo(mod, "repo")
     ref = mod.get("ref", "main")
     root = cfg_path.parent.parent
 
@@ -207,7 +281,7 @@ def list_modules(cfg_path: Path):
 
 def push_tag(tag: str, root: Path, cfg_path: Path):
     mod = _load_primary_module(cfg_path)
-    repo_url = _resolve_repo_url(mod["repo"])
+    repo_url = _resolve_module_repo(mod, "push_repo")
     ref = mod.get("ref", "main")
     tmp = root / ".tmp_push_tag"
 
@@ -224,9 +298,8 @@ def push_tag(tag: str, root: Path, cfg_path: Path):
 
     r = _git_checked(["ls-remote", "--tags", "origin", f"refs/tags/{tag}"], tmp, capture=True, action="检查远端标签")
     if r.stdout.strip():
-        rmtree(tmp)
-        print(f"错误: 远端标签 '{tag}' 已存在")
-        sys.exit(1)
+        print(f"[push-tag] 远端标签 '{tag}' 已存在，先删除旧标签")
+        _git_checked(["push", "--progress", "origin", f":refs/tags/{tag}"], tmp, show=True, action=f"删除远端标签 {tag}")
 
     print(f"[push-tag] 同步当前工程到远端分支 {branch}（不删除远端已有文件）")
     _copy_tree(root, tmp, stage="branch")
@@ -265,6 +338,7 @@ def main():
     parser.add_argument("--push-tag", default=None, metavar="TAG",
                         help="当前项目快照打标签推送 (不影响当前分支)")
     parser.add_argument("--config", default=None)
+    parser.add_argument("--yes", action="store_true", help="对 clean 命令跳过确认")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
@@ -290,6 +364,11 @@ def main():
             print("用法: python -m zpull list tags|modules")
         return
 
+    # --- clean 子命令 ---
+    if args.paths and args.paths[0] == "clean":
+        clean_project(root, assume_yes=args.yes)
+        return
+
     # --- help 子命令 ---
     if args.paths and args.paths[0] == "help":
         print("""zpull — Zephyr 轻量模块依赖管理工具
@@ -309,6 +388,10 @@ def main():
 查询:
   python -m zpull list tags                列出远程仓库的所有标签
   python -m zpull list modules             列出可拉取的模块
+
+清空当前工程:
+    python -m zpull clean                    删除当前工程内容，仅保留 zpull/.venv
+    python -m zpull clean --yes              跳过确认直接清空
 
 其他:
   python -m zpull --config path.yaml ...   指定配置文件
@@ -335,13 +418,13 @@ def main():
             # 骨架模式: sparse checkout 只拉 always 目录
             always = mod.get("always", []) or []
             shallow = set(mod.get("shallow", []))
-            repo = Repo(_resolve_repo_url(mod["repo"]), mod.get("ref", "main"), tmp)
+            repo = Repo(_resolve_module_repo(mod, "repo"), mod.get("ref", "main"), tmp)
             print(f"[skeleton] 从 '{mod.get('ref', 'main')}' 拉取骨架")
             repo.clone_sparse(always)
             extract_to(tmp, root, shallow_dirs=shallow)
         else:
             # 完整版本: 从 git 标签全量拉取
-            repo = Repo(_resolve_repo_url(mod["repo"]), tag, tmp)
+            repo = Repo(_resolve_module_repo(mod, "repo"), tag, tmp)
             print(f"[tag] 从标签 '{tag}' 完整拉取")
             repo.clone_full()
             extract_to(tmp, root)
@@ -356,15 +439,16 @@ def main():
         always  = mod.get("always", []) or []
 
         if not args.paths:
-            sparse = mod.get("sparse", None)
+            sparse_default = mod.get("sparse", []) or []
+            sparse = build_sparse_list(sparse_default, always, sparse_default)
         else:
-            sparse = list(args.paths)
+            sparse = build_sparse_list(list(args.paths), always, mod.get("sparse", []) or [])
 
         if tmp.exists():
             rmtree(tmp)
-        repo = Repo(_resolve_repo_url(mod["repo"]), mod.get("ref", "main"), tmp)
+        repo = Repo(_resolve_module_repo(mod, "repo"), mod.get("ref", "main"), tmp)
 
-        print(f"[{i+1}] 克隆 {_resolve_repo_url(mod['repo'])}")
+        print(f"[{i+1}] 克隆 {_resolve_module_repo(mod, 'repo')}")
         if sparse:
             print(f"  sparse: {sparse}")
             repo.clone_sparse(sparse)

@@ -1,354 +1,602 @@
-# z_regulator — Zephyr 轻量模块依赖管理工具
+# zpull 使用手册
 
-一个基于 **Git sparse-checkout** 的轻量模块管理工具，用于从单一 Git 仓库中按需拉取组件，并自动递归解析依赖。
+`zpull` 用来管理 Zephyr 工程里的模块、骨架文件和标签快照。
 
-## 前置要求
+你可以把它理解成三件事：
+
+1. 从远端仓库按需下拉模块
+2. 一键恢复某个标签对应的完整工程
+3. 把当前工程状态回推成远端标签
+
+## 1. 安装前提
+
+需要这些环境：
 
 - Python 3.10+
-- Git 2.25+（需要 sparse-checkout 支持）
+- Git 2.25+
 - PyYAML
+
+安装 PyYAML：
 
 ```bash
 pip install pyyaml
 ```
 
-## 快速开始
+## 2. 目录结构
 
-### 1. 准备项目目录
+`zpull` 在项目根目录运行。
 
-新建一个空的项目文件夹，放入以下文件：
+一个最小可用目录通常是：
 
+```text
+your_project/
+├── zpull/
+├── modules.yaml
+└── 其余会被拉取出来的工程文件
 ```
-my_project/
-├── CMakeLists.txt      # 你的构建文件
-├── modules.yaml        # 模块配置（见下方说明）
-└── z_regulator/        # 本工具包（从仓库拉取或手动复制）
-```
 
-### 2. 配置 modules.yaml
+## 3. 最短上手流程
 
-在项目根目录创建 `modules.yaml`，声明仓库地址、要拉取的模块和项目骨架：
+如果你只是想把工程拉下来，按这个顺序做：
+
+### 第一步：准备 modules.yaml
 
 ```yaml
 modules:
-  - repo: git@github.com:qingyu0620/Zephyr_Components.git
-    ref: main                                          # Git 分支或标签
-    sparse: [modules/led, modules/key]                 # 默认拉取的模块路径
-    always: [apps, thread, .vscode, src, .clangd,      # 每次拉取都会包含的骨架文件
-             boards, config, prj.conf]
-    extract:                                           # 仓库路径 -> 项目根目录路径 映射
-      bsp: bsp
-      modules: modules
-      apps: apps
-      thread: thread
-      .vscode: .vscode
-      src: src
-      .clangd: .clangd
-      boards: boards
-      config: config
-      prj.conf: prj.conf
-      controller: controller
+  - repo: git@github-qingyu0310:qingyu0310/Zephyr_Components.git
+    push_repo: git@github-qingyu0310:qingyu0310/Zephyr_Components.git
+    ref: main
+    sparse: [modules/led, modules/key, bsp/bsp_uart]
+    always: [apps, thread, .vscode, src, .clangd, boards, config, prj.conf, CMakeLists.txt]
+    shallow: [thread]
 ```
 
-### 3. 运行
+### 第二步：拉默认模块
 
 ```bash
-# 激活你的 Python 虚拟环境（如果有）
-# Windows:
-D:\Zephyr\.venv\Scripts\Activate.ps1
-
-# 在项目根目录下运行：
-python -m z_regulator modules/led
+python -m zpull
 ```
 
----
-
-## 使用方式
-
-所有命令都在**项目根目录**下执行。
-
-### 拉取指定模块（+ 依赖 + 骨架）
+### 第三步：如果只想恢复骨架
 
 ```bash
-python -m z_regulator modules/led
+python -m zpull --tag template
 ```
 
-这条命令会：
-1. 从仓库 sparse-checkout `modules/led` + `always` 列表中的骨架文件
-2. 读取 `modules/led/module.yaml`，递归解析所有 `depends` 依赖
-3. 自动追加依赖路径到 sparse-checkout（如 `bsp/bsp_gpio`、`controller/timer`）
-4. 将所有文件从临时目录提取到项目根目录
-5. 清理临时目录
-
-### 拉取多个模块
+### 第四步：如果要恢复完整标签快照
 
 ```bash
-python -m z_regulator modules/led modules/key
+python -m zpull --tag key
 ```
 
-### 只拉项目骨架（不拉任何模块）
+## 4. modules.yaml 怎么写
+
+最常用字段如下：
+
+| 字段 | 必填 | 用途 |
+|------|------|------|
+| `repo` | 是 | 下拉模块、列标签、列模块、拉完整标签时使用的仓库地址 |
+| `push_repo` | 否 | `--push-tag` 时使用的上传仓库地址；不写时回退到 `repo` |
+| `ref` | 否 | 默认分支，不写时用 `main` |
+| `sparse` | 否 | 执行 `python -m zpull` 时默认拉取的模块列表 |
+| `always` | 否 | 每次模块拉取时一起拉回的骨架路径 |
+| `shallow` | 否 | 骨架模式下只提取顶层文件、不提取子目录的路径 |
+
+### 什么时候改 `repo`
+
+改 `repo` 的场景：
+
+- 要切换下拉仓库
+- 要切换读取标签的仓库
+- 要切换列模块/列标签的仓库
+
+### 什么时候改 `push_repo`
+
+改 `push_repo` 的场景：
+
+- 下拉和上传想走不同仓库
+- 下拉可以用公共仓库，上传必须走你自己的 SSH 账号
+
+### `always` 里应该放什么
+
+建议把这些根骨架文件放进去：
+
+- `CMakeLists.txt`
+- `prj.conf`
+- `apps`
+- `thread`
+- `src`
+- `boards`
+- `config`
+
+只要它们在 `always` 里，清空工程后重新下拉就能恢复。
+
+## 5. 常用命令手册
+
+### 拉默认模块
 
 ```bash
-python -m z_regulator empty_project
+python -m zpull
 ```
 
-只拉取 `always` 列表中的文件，适合搭建空白项目框架。
+适用场景：
 
-### 拉取所有默认模块
+- `modules.yaml` 已经写好了默认模块列表
+- 想快速恢复常用工程结构
+
+行为：
+
+- 使用 `sparse`
+- 自动把 `always` 一起加进去
+- 自动递归解析依赖
+- 提取到项目根目录
+
+### 拉指定模块
 
 ```bash
-python -m z_regulator
+python -m zpull modules/led
+python -m zpull modules/led modules/key
 ```
 
-拉取 `modules.yaml` 中 `sparse` 列表里声明的所有模块及其依赖。
+适用场景：
 
-### 指定配置文件
+- 只想要某几个模块
+- 不想拉 `sparse` 里全部默认模块
+
+行为：
+
+- 拉你指定的路径
+- 自动补上 `always`
+- 自动解析依赖
+
+### 拉项目骨架
 
 ```bash
-python -m zpull --config path/to/my_modules.yaml modules/led
+python -m zpull --tag template
 ```
 
-### 多账号 SSH 使用
+这个命令不是“拉标签 template 的完整快照”，而是进入骨架模式。
 
-共享的 `modules.yaml` 应保持通用仓库地址，例如：
+行为：
+
+- 使用 `repo` + `ref`
+- 只拉 `always` 中的骨架内容
+- `shallow` 中的目录只提取顶层文件
+
+适合：
+
+- 刚执行过 `clean`
+- 只想恢复基础工程，不想拉具体模块
+
+### 拉完整标签快照
+
+```bash
+python -m zpull --tag key
+python -m zpull --tag blink
+```
+
+行为：
+
+- 对标签做完整浅克隆
+- 完整提取该标签下的工程文件
+
+注意：
+
+- 这是完整快照恢复，不是 sparse-checkout
+- 如果远端标签里已经带了 `build/`、`compile_commands.json`，它们也会被提取出来
+
+### 列标签
+
+```bash
+python -m zpull list tags
+```
+
+### 列模块
+
+```bash
+python -m zpull list modules
+```
+
+### 推送当前工程为标签
+
+```bash
+python -m zpull --push-tag key
+```
+
+行为：
+
+1. 用 `push_repo` 克隆远端分支
+2. 把当前工程同步到该分支并推送
+3. 切到游离 `HEAD`
+4. 用当前工程状态创建快照提交
+5. 如果远端同名标签已存在，先删除旧标签
+6. 推送新标签
+
+说明：
+
+- 当前工程目录本身不要求是 Git 仓库
+- `ref` 必须是可推送分支，不能写成标签名
+- 如果没写 `push_repo`，会退回使用 `repo`
+- `--push-tag` 当前会自动覆盖远端同名标签
+
+### 清空当前工程
+
+带确认：
+
+```bash
+python -m zpull clean
+```
+
+跳过确认：
+
+```bash
+python -m zpull clean --yes
+```
+
+行为：
+
+- 删除项目根目录下除 `zpull/`、`.venv/`、`.git/` 之外的内容
+- 清空后可以重新执行 `python -m zpull` 或 `python -m zpull --tag template`
+
+## 6. 推荐工作流
+
+### 场景 A：从空目录恢复工程
+
+```bash
+python -m zpull --tag template
+python -m zpull modules/led
+```
+
+### 场景 B：直接恢复某个完整版本
+
+```bash
+python -m zpull --tag key
+```
+
+### 场景 C：清空后重新下拉
+
+```bash
+python -m zpull clean --yes
+python -m zpull
+```
+
+### 场景 D：把当前工程打成远端标签
+
+```bash
+python -m zpull --push-tag key
+```
+
+## 7. 多账号 SSH 使用
+
+如果你有多个 GitHub 账号，建议这样处理：
+
+### 方案一：直接把 SSH 别名写进 modules.yaml
 
 ```yaml
-repo: git@github.com:qingyu0310/Zephyr_Components.git
+modules:
+  - repo: git@github-qingyu0310:qingyu0310/Zephyr_Components.git
+    push_repo: git@github-qingyu0310:qingyu0310/Zephyr_Components.git
 ```
 
-如果你本机需要通过 SSH 别名切换账号，不要改共享文件，直接在本机设置环境变量：
+这种方式最直接，最适合你自己的私有工程。
+
+### 方案二：共享配置保持通用，本机再做覆盖
+
+环境变量方式：
 
 ```bash
 $env:ZPULL_GIT_HOST_ALIAS="github-qingyu0310"
-python -m zpull --push-tag uart
 ```
 
-这样 `zpull` 会在运行时把仓库地址临时改写为 `git@github-qingyu0310:...`，其他人仍可继续使用默认的 `git@github.com:...`。
+用户目录配置方式：
 
-### 上传项目快照为标签
-
-```bash
-python -m zpull --push-tag uart
+```json
+{
+  "git_host_alias": "github-qingyu0310"
+}
 ```
 
-这条命令会：
-1. 读取 modules.yaml 中的 repo 和 ref，克隆目标仓库到临时目录
-2. 把当前工程的修改/新增文件同步到目标分支并推送（不删除远端已有文件）
-3. 在游离 HEAD 上用当前工程完整状态创建快照 commit（包含本地删除带来的缺失）
-4. 打标签并推送到目标仓库
+文件位置：
+
+```text
+~/.zpull.json
+```
 
 说明：
-- 当前工程目录本身不需要是 Git 仓库
-- 上传目标始终是 modules.yaml 指向的远端仓库
-- modules.yaml 中的 ref 必须是可推送分支，不能是标签
 
-**典型工作流：**
+- 本地覆盖只会改写 `git@github.com:owner/repo.git` 这种地址里的 host 部分
+- 如果 `modules.yaml` 已经直接写成 SSH 别名地址，就不需要再依赖本地覆盖
 
-```bash
-# 1. 开发完功能后，删掉本次不需要的模块
-Remove-Item -Recurse -Force modules/led, modules/servo, bsp/bsp_gpio
+## 8. 依赖解析怎么工作
 
-# 2. 一键上传标签
-python -m zpull --push-tag uart
-
-# 完成! 远端 main 上保留正常模块更新，uart 标签是当前工程的干净项目快照
-```
-
----
-
-## 指定版本（标签 / 分支）拉取
-
-通过 `modules.yaml` 中的 `ref` 字段控制拉取的版本。
-
-### 使用标签（Tag）
-
-适合锁定到一个稳定版本，确保每次拉取结果一致。
-
-**第一步：在仓库中创建标签**
-
-```bash
-# 在 Zephyr_Components 仓库中
-git tag v1.0.0
-git push origin v1.0.0
-
-# 或者给某个特定提交打标签
-git tag v1.0.0 <commit-hash>
-git push origin v1.0.0
-```
-
-**第二步：在 modules.yaml 中引用标签**
+每个模块目录都可以带一个 `module.yaml`，例如：
 
 ```yaml
-modules:
-  - repo: git@github.com:qingyu0620/Zephyr_Components.git
-    ref: v1.0.0          # ← 改成标签名
-    sparse: [modules/led]
-    always: [apps, thread, .vscode, src, .clangd, boards, config, prj.conf]
-    extract:
-      bsp: bsp
-      modules: modules
-      apps: apps
-      # ... 其余映射
-```
-
-**第三步：运行**
-
-```bash
-python -m z_regulator modules/led
-```
-
-此时拉取的是 `v1.0.0` 标签对应的代码快照。
-
-### 使用分支（Branch）
-
-适合跟踪某个开发分支的最新代码。
-
-```yaml
-modules:
-  - repo: git@github.com:qingyu0620/Zephyr_Components.git
-    ref: dev              # ← 分支名
-    sparse: [modules/led]
-    # ...
-```
-
-### 使用已有标签
-
-仓库中已有以下标签可直接使用：
-
-| 标签 | 说明 |
-|------|------|
-| `template` | 项目初始骨架，不含任何模块代码 |
-| `blink_led` | 包含 LED 闪烁功能的完整示例 |
-| `uart` | bsp_uart DMA 异步收发测试 (STM32F4) |
-
-示例：拉取 `blink_led` 版本
-
-```yaml
-modules:
-  - repo: git@github.com:qingyu0620/Zephyr_Components.git
-    ref: blink_led
-    sparse: [modules/led]
-    always: [apps, thread, .vscode, src, .clangd, boards, config, prj.conf]
-    extract:
-      bsp: bsp
-      modules: modules
-      apps: apps
-      thread: thread
-      .vscode: .vscode
-      src: src
-      .clangd: .clangd
-      boards: boards
-      config: config
-      prj.conf: prj.conf
-      controller: controller
-```
-
-```bash
-python -m z_regulator modules/led
-```
-
-### 版本管理最佳实践
-
-1. **开发阶段**：`ref: main`，跟踪最新代码
-2. **交付/教学**：`ref: v1.0.0`，使用标签锁定版本
-3. **功能分支**：`ref: feature/xxx`，测试特定功能
-
----
-
-## module.yaml 依赖声明
-
-每个模块目录下可以放一个 `module.yaml` 来声明依赖关系：
-
-```yaml
-# modules/led/module.yaml
 name: led
 depends:
-  - path: bsp/bsp_gpio      # 依赖 BSP 层的 GPIO 驱动
-  - path: thread/led         # 依赖 LED 线程
-  - path: controller/timer   # 依赖定时器控制器
+  - path: bsp/bsp_gpio
+  - path: thread/led
+  - path: controller/timer
 ```
 
-`z_regulator` 会递归解析这些依赖，自动追加到 sparse-checkout 中拉取。
+当你执行模块拉取时，`zpull` 会：
 
-### 依赖链示例
+1. 先拉你指定的模块
+2. 读取该模块的 `module.yaml`
+3. 递归把依赖目录继续加入 sparse-checkout
 
-```
-modules/led
-  ├── bsp/bsp_gpio        (直接依赖)
-  ├── thread/led           (直接依赖)
-  └── controller/timer     (直接依赖)
-        └── (无子依赖)
-```
+## 9. 每个模块怎么写
 
-如果 `bsp/bsp_gpio` 也有 `module.yaml` 声明了更深层的依赖，工具会继续递归解析。
+这一部分最重要的点是：
 
----
+- `module.yaml` 管的是“zpull 下拉时的依赖”
+- `CMakeLists.txt` 管的是“CMake 编译时的依赖”
 
-## modules.yaml 字段说明
+这两个文件职责不同，不能混为一谈。
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `repo` | string | 是 | Git 仓库地址（SSH 或 HTTPS） |
-| `ref` | string | 否 | 分支名或标签名，默认 `main` |
-| `sparse` | list | 否 | 默认拉取的模块路径列表（无参数运行时使用） |
-| `always` | list | 否 | 每次拉取都会包含的路径（项目骨架） |
-| `extract` | dict | 否 | 仓库路径 → 项目目录的映射关系 |
+### 一个模块通常包含什么
 
----
+以 `modules/led` 为例，一个模块目录通常至少包含：
 
-## 工作原理
-
-```
-1. 读取 modules.yaml 配置
-2. git clone --no-checkout --depth 1 --filter=blob:none  (极速浅克隆)
-3. git sparse-checkout set <paths>                        (只拉需要的目录)
-4. 递归读取 module.yaml，追加依赖到 sparse-checkout
-5. 将文件从临时目录 (.tmp_clone) 移动到项目根目录
-6. 删除临时目录
+```text
+modules/led/
+├── CMakeLists.txt
+├── module.yaml
+├── led.hpp
+└── 其它源文件
 ```
 
-整个过程只下载需要的文件 blob，不会拉取完整仓库历史，速度极快。
+### module.yaml 怎么写
 
----
+以 `modules/led/module.yaml` 为例：
 
-## 包结构
-
-```
-zpull/
-├── __init__.py      # 包标识
-├── __main__.py      # 入口: 参数解析、主流程 (pull + push-tag)
-├── repo.py          # Git 仓库操作 (clone, sparse-checkout)
-├── resolver.py      # 依赖递归解析 (读取 module.yaml)
-├── extractor.py     # 文件提取 (从临时目录移动到项目根)
-└── utils.py         # 工具函数 (yaml加载, git命令执行, 目录删除)
+```yaml
+name: led
+description: LED 控制模块
+depends:
+  - path: bsp/bsp_gpio
+  - path: thread/led
+  - path: controller/timer
 ```
 
----
+含义是：
 
-## 常见问题
+- 当你执行 `python -m zpull modules/led` 时
+- `zpull` 不只会拉 `modules/led`
+- 还会继续把 `bsp/bsp_gpio`、`thread/led`、`controller/timer` 一并拉下来
 
-### Q: 提示 "需要 pyyaml"
+这里的依赖是“文件/目录依赖”，目的是保证你下拉到本地时，模块所需的代码目录是齐的。
+
+### CMakeLists.txt 怎么写
+
+以 `modules/led/CMakeLists.txt` 为例：
+
+```cmake
+add_library(mod_led INTERFACE)
+target_include_directories(mod_led INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mod_led INTERFACE bsp_gpio)
+```
+
+这代表：
+
+- `mod_led` 是一个接口库
+- 它把当前目录作为头文件目录暴露出去
+- 它在编译层面依赖 `bsp_gpio`
+
+这里的依赖是“构建依赖”，目的是让编译器和链接器知道需要包含哪些头文件和目标库。
+
+### 两种依赖的区别
+
+可以这样理解：
+
+- `module.yaml depends`：告诉 `zpull` 还要把哪些目录拉下来
+- `target_link_libraries(...)`：告诉 CMake 编译时还要链接哪些库
+
+一个模块如果只写了 `module.yaml`，不写 `CMakeLists.txt` 的构建依赖，可能会出现：
+
+- 文件已经被拉下来了
+- 但工程编译时依然找不到头文件或目标库
+
+反过来，如果只写了 `CMakeLists.txt`，不写 `module.yaml` 依赖，也可能出现：
+
+- CMake 逻辑没问题
+- 但 `zpull` 没把依赖目录拉到本地，导致编译缺文件
+
+所以这两个依赖通常要成对维护。
+
+## 10. 目标命名约定
+
+从当前工程的 CMake 约定看，不同层有不同的 target 前缀：
+
+- BSP 层：`bsp_xxx`
+- 模块层：`mod_xxx`
+- 控制器层：`ctrl_xxx`
+
+例如：
+
+- `bsp/bsp_gpio/CMakeLists.txt` 里定义的是 `bsp_gpio`
+- `modules/led/CMakeLists.txt` 里定义的是 `mod_led`
+- `modules/key/CMakeLists.txt` 里定义的是 `mod_key`
+
+这套命名约定很重要，因为上层容器 CMake 就是按这个规则自动收集 target 的。
+
+## 11. 顶层 CMake 是怎么接入模块的
+
+当前工程的接入方式分三层：
+
+### 1. 子容器自动扫描
+
+例如：
+
+- `bsp/CMakeLists.txt` 会扫描每个带 `CMakeLists.txt` 的 BSP 子目录
+- `modules/CMakeLists.txt` 会扫描每个带 `CMakeLists.txt` 的模块子目录
+- `controller/CMakeLists.txt` 会扫描每个带 `CMakeLists.txt` 的控制器子目录
+
+以 `modules/CMakeLists.txt` 为例，它会：
+
+1. 遍历 `modules/*`
+2. 对每个存在 `CMakeLists.txt` 的目录执行 `add_subdirectory`
+3. 如果目标名满足 `mod_${subdir}`，就加入 `MODULE_TARGETS`
+
+所以模块目录名和 target 名要对应，例如：
+
+- 目录：`modules/led`
+- target：`mod_led`
+
+### 2. 工程根目录统一 add_subdirectory
+
+根目录 `CMakeLists.txt` 会在这些目录存在时执行：
+
+```cmake
+add_subdirectory(bsp)
+add_subdirectory(modules)
+add_subdirectory(controller)
+```
+
+### 3. 工程根目录统一链接
+
+根目录 `CMakeLists.txt` 会把扫描到的 target 自动链接到 `app`：
+
+```cmake
+foreach(mod ${MODULE_TARGETS})
+  target_link_libraries(app PRIVATE ${mod})
+endforeach()
+```
+
+也就是说：
+
+- 你只要在模块目录写好符合命名规则的 `CMakeLists.txt`
+- 被容器扫描到之后
+- 根工程就会自动把它接进来
+
+## 12. 一个完整示例
+
+以 `modules/key` 为例：
+
+`module.yaml`：
+
+```yaml
+name: key
+description: 按键检测模块
+depends:
+  - path: bsp/bsp_gpio
+  - path: thread/key
+```
+
+`CMakeLists.txt`：
+
+```cmake
+add_library(mod_key INTERFACE)
+target_include_directories(mod_key INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(mod_key INTERFACE bsp_gpio)
+```
+
+这个模块的完整含义是：
+
+- 下拉 `modules/key` 时，要连同 `bsp/bsp_gpio` 和 `thread/key` 一起拉下来
+- 编译 `mod_key` 时，要把当前目录加入 include path
+- 并且链接 `bsp_gpio`
+
+## 13. 编写新模块时的建议顺序
+
+推荐按这个顺序写：
+
+1. 新建目录，例如 `modules/foo`
+2. 先写 `module.yaml`，把下拉依赖声明清楚
+3. 再写 `CMakeLists.txt`，把 target、include 和链接关系写清楚
+4. 保证目录名和 target 命名规则一致
+5. 再执行 `python -m zpull modules/foo` 验证下拉是否完整
+6. 最后走一次工程构建，验证 CMake 依赖是否正确
+
+## 14. 文件提取和排除规则
+
+### 提取规则
+
+- 目标目录已存在：合并，不覆盖已有同名文件
+- 目标文件已存在：跳过
+- 临时目录提取完成后会删除
+
+### 默认排除项
+
+以下内容不会参与 `push-tag` 同步，或不会被当作工程保留项：
+
+- `.git`
+- `.tmp_clone`
+- `.tmp_list`
+- `.tmp_push_tag`
+- `build`
+- `__pycache__`
+- `.venv`
+- `compile_commands.json`
+
+## 15. 常见问题
+
+### 提示 `需要 pyyaml: pip install pyyaml`
+
+执行：
+
 ```bash
 pip install pyyaml
 ```
 
-### Q: Git 克隆失败 / SSH 认证错误
-确保已配置 SSH Key 并添加到 GitHub：
+说明：
+
+- `clean` 命令不依赖 `PyYAML`
+- 其他读取 `modules.yaml` 的命令都需要它
+
+### `Host key verification failed`
+
+说明 SSH host 或 SSH 别名没有配置好。
+
+优先检查：
+
 ```bash
-ssh -T git@github.com
-```
-如果使用 HTTPS，将 `repo` 改为：
-```yaml
-repo: https://github.com/qingyu0620/Zephyr_Components.git
+ssh -T git@github-qingyu0310
 ```
 
-### Q: 目标文件已存在怎么办？
-- 目录：会 **合并**（只复制目标中不存在的文件）
-- 文件：会 **跳过**（不覆盖）
+如果 `repo` 或 `push_repo` 用的是 SSH 别名，必须先保证别名本身可用。
 
-### Q: 如何更新已拉取的模块？
-删除对应目录后重新运行：
+### 推送时报权限错误
+
+例如：
+
+```text
+Permission to xxx/yyy.git denied to some_user.
+```
+
+通常检查这三项：
+
+- `push_repo` 是否写对
+- SSH 别名是否绑定到了正确账号
+- 目标仓库是否给该账号开了写权限
+
+### `clean` 之后根目录 `CMakeLists.txt` 没了
+
+这是正常的，因为 `clean` 会清空工程。
+
+重新执行：
+
 ```bash
-Remove-Item -Recurse -Force modules/led, bsp
-python -m z_regulator modules/led
+python -m zpull
+```
+
+或：
+
+```bash
+python -m zpull modules/led
+```
+
+只要 `CMakeLists.txt` 在 `always` 列表里，就会重新拉回来。
+
+## 16. 包结构
+
+```text
+zpull/
+├── __init__.py
+├── __main__.py
+├── extractor.py
+├── repo.py
+├── resolver.py
+├── utils.py
+└── README.md
 ```
