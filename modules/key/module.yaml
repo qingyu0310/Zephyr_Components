@@ -1,5 +1,0 @@
-name: key
-description: 按键检测模块
-depends:
-  - path: bsp/bsp_gpio
-  - path: thread/key
