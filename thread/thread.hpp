@@ -44,7 +44,7 @@ public:
     void Start(int prio, k_thread_entry_t entry, void* p2, void* p3)
     {
         k_thread_create(&thread_, stack_, K_THREAD_STACK_SIZEOF(stack_),
-                        entry, this, p2, p3, prio, 0, K_NO_WAIT);
+                        entry, this, nullptr, nullptr, prio, 0, K_NO_WAIT);
     }
 
     T& operator[](uint8_t i) { return items_[i < used_ ? i : 0]; }

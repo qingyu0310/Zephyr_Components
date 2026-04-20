@@ -1,0 +1,4 @@
+name: fs_i6
+description: 富斯i6遥控器
+depends:
+  - path: bsp/bsp_uart

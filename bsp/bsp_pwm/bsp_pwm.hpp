@@ -21,6 +21,8 @@ struct BspPwmObj
 };
 
 BspPwmObj bsp_pwm_init(const pwm_dt_spec* dt_spec, uint32_t max_value);
-int bsp_pwm_set(const BspPwmObj& obj, uint32_t value);
+int32_t bsp_pwm_set(const BspPwmObj& obj, uint32_t value);
+int32_t bsp_pwm_set_us(const BspPwmObj& obj, uint32_t pulse_us);
+int32_t bsp_pwm_set_ns(const BspPwmObj& obj, uint32_t pulse_ns);
 
 

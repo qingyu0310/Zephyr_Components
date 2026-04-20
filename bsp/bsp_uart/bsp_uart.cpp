@@ -66,7 +66,7 @@ static void uart_async_cb(const device* dev, uart_event* evt, void* user_data)
 
 /* --------------------------------- public --------------------------------- */
 
-int bsp_uart_init(BspUartObj& obj, const device* dev, uint32_t rx_timeout)
+int32_t bsp_uart_init(BspUartObj& obj, const device* dev, uint32_t rx_timeout)
 {
     obj.dev        = dev;
     obj.head       = 0;
@@ -99,7 +99,7 @@ void bsp_uart_set_rx_callback(BspUartObj& obj, BspUartRxCallback cb, void* arg)
     obj.rx_cb_arg = arg;
 }
 
-int bsp_uart_send(const BspUartObj& obj, const uint8_t* data, uint16_t len)
+int32_t bsp_uart_send(const BspUartObj& obj, const uint8_t* data, uint16_t len)
 {
     if (!obj.ready) {
         return -ENODEV;
@@ -110,7 +110,7 @@ int bsp_uart_send(const BspUartObj& obj, const uint8_t* data, uint16_t len)
     return uart_tx(obj.dev, data, len, SYS_FOREVER_US);
 }
 
-int bsp_uart_read(BspUartObj& obj, uint8_t* data, uint16_t len)
+int32_t bsp_uart_read(BspUartObj& obj, uint8_t* data, uint16_t len)
 {
     if (!obj.ready) {
         return -ENODEV;

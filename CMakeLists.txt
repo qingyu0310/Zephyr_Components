@@ -26,6 +26,7 @@ set(APP_SOURCE_DIRS
     communication
     src
     thread
+    topic
     # src/xxx
 )
 
