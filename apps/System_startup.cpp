@@ -10,8 +10,7 @@
  */
 
 #include "System_startup.h"
-#include "trd_led.h"
-#include <zephyr/drivers/gpio.h>
+#include "led.hpp"
 
 void System_Bsp_Init()
 {
@@ -21,20 +20,24 @@ void System_Bsp_Init()
 void System_Modules_Init()
 {
     {
-        static const struct gpio_dt_spec spec[] {
-            GPIO_DT_SPEC_GET(DT_NODELABEL(led0), gpios),
-            GPIO_DT_SPEC_GET(DT_NODELABEL(led1), gpios),
+        static const gpio_dt_spec spec[] {
+            GPIO_DT_SPEC_GET(DT_NODELABEL(key0), gpios),
         };
 
-        for (uint8_t i = 0; i < thread::led::N; i++) {
-            Led ins{};
+        for (uint8_t i = 0; i < sizeof(spec) / sizeof(spec[0]); i++) {
+            Key ins{};
             ins.Init(&spec[i]);
-            thread::led::thread_.Join(ins);
+            thread::key::thread_.Join(ins);
         }
     }
 }
 
 void System_Thread_Start()
 {
-    thread::led::thread_start(5);
+    {
+        static Led ins{};
+        gpio_dt_spec spec = GPIO_DT_SPEC_GET(DT_NODELABEL(led0), gpios);
+        ins.Init(&spec);
+        thread::key::thread_start(5, &ins);
+    }
 }
