@@ -1,6 +1,0 @@
-name: led
-description: LED 控制模块
-depends:
-  - path: bsp/bsp_gpio
-  - path: thread/led
-  - path: controller/timer

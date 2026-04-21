@@ -1,4 +1,0 @@
-name: mod_motor_pwm
-description: pwm电机
-depends:
-  - path: bsp/bsp_pwm

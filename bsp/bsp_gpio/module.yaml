@@ -1,3 +1,0 @@
-name: gpio
-description: GPIO BSP 封装 (Zephyr)
-depends: []
