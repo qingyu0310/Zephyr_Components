@@ -1,3 +1,0 @@
-name: uart
-description: UART BSP 封装 (Zephyr)
-depends: []

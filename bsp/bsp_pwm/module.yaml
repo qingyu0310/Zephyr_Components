@@ -1,3 +1,0 @@
-name: pwm
-description: PWM BSP 封装 (Zephyr)
-depends: []
