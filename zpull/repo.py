@@ -8,6 +8,7 @@ class Repo:
         self.url = url
         self.ref = ref
         self.dir = clone_dir
+        self._explicit_paths: set[str] = set()
 
     def clone_sparse(self, paths: list):
         cmd = ["clone", "--no-checkout", "--depth", "1", "--filter=blob:none"]
@@ -17,6 +18,7 @@ class Repo:
         run_git(["sparse-checkout", "init", "--cone"], cwd=str(self.dir))
         run_git(["sparse-checkout", "set", "--skip-checks"] + paths, cwd=str(self.dir))
         run_git(["checkout"], cwd=str(self.dir))
+        self._explicit_paths.update(p.replace("\\", "/") for p in paths)
 
     def clone_full(self):
         cmd = ["clone", "--depth", "1"]
@@ -31,11 +33,11 @@ class Repo:
         existing = set(r.stdout.strip().splitlines()) if r.returncode == 0 else set()
         new = set()
         for p in paths:
-            if p in existing:
+            normalized = p.replace("\\", "/")
+            self._explicit_paths.add(normalized)
+            if normalized in existing:
                 continue
-            if any(p.startswith(e + "/") for e in existing):
-                continue
-            new.add(p)
+            new.add(normalized)
         if not new:
             return
         print(f"  [sparse+] +{sorted(new)}")
@@ -46,6 +48,5 @@ class Repo:
         r = subprocess.run(["git", "sparse-checkout", "list"],
                            capture_output=True, text=True,
                            stdin=subprocess.DEVNULL, cwd=str(self.dir))
-        if r.returncode != 0 or not r.stdout.strip():
-            return []
-        return r.stdout.strip().splitlines()
+        git_paths = set(r.stdout.strip().splitlines()) if r.returncode == 0 and r.stdout.strip() else set()
+        return sorted(git_paths | self._explicit_paths)

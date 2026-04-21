@@ -124,10 +124,15 @@ python -m zpull --branch project/uart
 - `CMakeLists.txt`
 - `prj.conf`
 
-建议标准：
+其中 `thread` 目录有特殊处理：
 
-- 放进去的内容应该是“模板骨架”，即你希望 `--tag template` 和 `--update-skeleton` 始终跟随最新版本的内容
-- 如果你希望模板一拉下来就能编译并带板级初始化，那么工程入口、板级配置和构建入口就应该进 `always`
+- `shallow: [thread]` 表示骨架模式下只提取 `thread` 的**顶层文件**，例如 `thread/thread.hpp`
+- `thread/led`、`thread/key` 这类模块专属线程实现**不属于骨架**，由各自模块的 `module.yaml` 通过 `depends: - path: thread/led` 声明，拉模块时自动带下来
+
+| 内容 | 来源 | 拉取时机 |
+|------|------|----------|
+| `thread/thread.hpp` 等顶层公共文件 | `always` + `shallow` | 拉模块、更新骨架时 |
+| `thread/led`、`thread/key` 等子目录 | 模块的 `module.yaml` 依赖 | 拉对应模块时 |
 
 如果你想要的是“轻骨架”，那下面这些通常不建议放进 `always`：
 

@@ -44,6 +44,19 @@ def build_sparse_list(args_paths, sparse_default):
     return paths
 
 
+def merge_unique_paths(*path_groups):
+    merged = []
+    seen = set()
+    for group in path_groups:
+        for path in group or []:
+            normalized = str(path).replace("\\", "/")
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            merged.append(normalized)
+    return merged
+
+
 def build_shallow_keep(paths: list[str], shallow_dirs: set[str]) -> dict[str, set[str]]:
     keep: dict[str, set[str]] = {}
     for path in paths:
@@ -458,10 +471,10 @@ def main():
                         help="当前项目快照打标签推送 (不影响当前分支)")
     parser.add_argument("--push-branch", default=None, metavar="BRANCH",
                         help="把当前工程同步到指定分支")
-    parser.add_argument("--update-skeleton", action="store_true",
+    parser.add_argument("--update-skeleton", "--updata-skeleton", action="store_true",
                         help="从 ref 同步最新骨架(always)")
     parser.add_argument("--config", default=None)
-    parser.add_argument("--yes", action="store_true", help="对 clean 命令跳过确认")
+    parser.add_argument("--yes", "-yes", action="store_true", help="对 clean 命令跳过确认")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
@@ -580,19 +593,21 @@ def main():
     # --- 模块模式: sparse checkout + 依赖解析 ---
     for i, mod in enumerate(load_yaml(cfg_path).get("modules", [])):
         sparse_default = mod.get("sparse", []) or []
+        always = mod.get("always", []) or []
         if not args.paths:
             sparse = build_sparse_list([], sparse_default)
         else:
             sparse = build_sparse_list(list(args.paths), sparse_default)
+        checkout_paths = merge_unique_paths(sparse, always)
 
         if tmp.exists():
             rmtree(tmp)
         repo = Repo(_resolve_module_repo(mod, "repo"), mod.get("ref", "main"), tmp)
 
         print(f"[{i+1}] 克隆 {_resolve_module_repo(mod, 'repo')}")
-        if sparse:
-            print(f"  sparse: {sparse}")
-            repo.clone_sparse(sparse)
+        if checkout_paths:
+            print(f"  sparse: {checkout_paths}")
+            repo.clone_sparse(checkout_paths)
         else:
             repo.clone_full()
 

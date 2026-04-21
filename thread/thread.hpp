@@ -41,7 +41,7 @@ public:
         return true;
     }
 
-    void Start(int prio, k_thread_entry_t entry)
+    void Start(int prio, k_thread_entry_t entry, void* p2, void* p3)
     {
         k_thread_create(&thread_, stack_, K_THREAD_STACK_SIZEOF(stack_),
                         entry, this, nullptr, nullptr, prio, 0, K_NO_WAIT);
