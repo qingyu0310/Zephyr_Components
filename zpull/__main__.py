@@ -4,11 +4,13 @@
 用法:
     python -m zpull --tag template             # 拉取 template 标签 (空骨架)
     python -m zpull --tag blink_led            # 拉取 blink_led 标签 (完整版本)
+    python -m zpull --branch project/uart      # 拉取 project/uart 分支 (最新项目线)
     python -m zpull modules/led                # 拉模块 + 依赖 + 骨架
     python -m zpull modules/led bsp/bsp_i2c    # 拉多个
+    python -m zpull --push-branch project/uart # 当前工程同步到项目分支
     python -m zpull --push-tag uart            # 当前项目快照打标签推送
-    python -m zpull list tags                   # 列出远程标签
-    python -m zpull list modules                # 列出可用模块
+    python -m zpull list tags                  # 列出远程标签
+    python -m zpull list modules               # 列出可用模块
     python -m zpull --config modules.yaml      # 指定配置文件
 """
 
@@ -324,6 +326,77 @@ def list_modules(cfg_path: Path):
         print("  (无法获取)")
 
 
+def pull_skeleton(root: Path, cfg_path: Path):
+    mod = _load_primary_module(cfg_path)
+    always = mod.get("always", []) or []
+    shallow = set(mod.get("shallow", []))
+    tmp = root / ".tmp_clone"
+
+    if tmp.exists():
+        rmtree(tmp)
+
+    repo = Repo(_resolve_module_repo(mod, "repo"), mod.get("ref", "main"), tmp)
+    print(f"[skeleton] 从分支 '{mod.get('ref', 'main')}' 拉取最新骨架")
+    repo.clone_sparse(always)
+    replace_from(tmp, root, set(always), shallow_dirs=shallow)
+    rmtree(tmp)
+    print(f"  [clean] 临时目录已删除")
+    print("\n=== 完成 ===")
+
+
+def pull_branch(branch: str, root: Path, cfg_path: Path):
+    mod = _load_primary_module(cfg_path)
+    tmp = root / ".tmp_clone"
+
+    if tmp.exists():
+        rmtree(tmp)
+
+    repo = Repo(_resolve_module_repo(mod, "repo"), branch, tmp)
+    print(f"[branch] 从分支 '{branch}' 完整拉取")
+    repo.clone_full()
+    extract_to(tmp, root)
+    rmtree(tmp)
+    print(f"  [clean] 临时目录已删除")
+    print("\n=== 完成 ===")
+
+
+def push_branch(branch: str, root: Path, cfg_path: Path):
+    mod = _load_primary_module(cfg_path)
+    repo_url = _resolve_module_repo(mod, "push_repo")
+    ref = mod.get("ref", "main")
+    tmp = root / ".tmp_push_tag"
+
+    print(f"[push-branch] 目标仓库: {repo_url}")
+    print(f"[push-branch] 目标分支: {branch}")
+    print(f"[push-branch] 基准分支: {ref}")
+    _clone_repo(repo_url, ref, tmp)
+
+    r = _git_checked(["ls-remote", "--heads", "origin", f"refs/heads/{branch}"], tmp,
+                     capture=True, action="检查远端分支")
+    if r.stdout.strip():
+        _git_checked(["checkout", branch], tmp, action=f"切换到分支 {branch}")
+        _git_checked(["pull", "--ff-only", "origin", branch], tmp, show=True,
+                     action=f"同步远端分支 {branch}")
+    else:
+        _git_checked(["checkout", "-b", branch], tmp, action=f"创建分支 {branch}")
+
+    print(f"[push-branch] 同步当前工程到分支 {branch}")
+    _copy_tree(root, tmp, stage="branch")
+    _git_checked(["add", "--all"], tmp, action="暂存分支更新")
+
+    r = _git(["diff", "--cached", "--quiet"], tmp)
+    if r.returncode != 0:
+        _git_checked(["commit", "-m", f"update branch: {branch}"], tmp, action="提交分支更新")
+        print(f"[push-branch] 推送分支进度: {branch}")
+        _git_checked(["push", "--progress", "-u", "origin", branch], tmp, show=True,
+                     action=f"推送分支 {branch}")
+    else:
+        print(f"[push-branch] 分支 {branch} 无变更需要推送")
+
+    rmtree(tmp)
+    print("\n=== 完成 ===")
+
+
 def push_tag(tag: str, root: Path, cfg_path: Path):
     mod = _load_primary_module(cfg_path)
     repo_url = _resolve_module_repo(mod, "push_repo")
@@ -380,8 +453,13 @@ def main():
     parser = argparse.ArgumentParser(description="模块依赖管理")
     parser.add_argument("paths", nargs="*")
     parser.add_argument("--tag", default=None, help="从指定标签完整拉取")
+    parser.add_argument("--branch", default=None, help="从指定分支完整拉取")
     parser.add_argument("--push-tag", default=None, metavar="TAG",
                         help="当前项目快照打标签推送 (不影响当前分支)")
+    parser.add_argument("--push-branch", default=None, metavar="BRANCH",
+                        help="把当前工程同步到指定分支")
+    parser.add_argument("--update-skeleton", action="store_true",
+                        help="从 ref 同步最新骨架(always)")
     parser.add_argument("--config", default=None)
     parser.add_argument("--yes", action="store_true", help="对 clean 命令跳过确认")
     args = parser.parse_args()
@@ -393,6 +471,21 @@ def main():
     # --- --push-tag 模式 ---
     if args.push_tag:
         push_tag(args.push_tag, root, cfg_path)
+        return
+
+    # --- --push-branch 模式 ---
+    if args.push_branch:
+        push_branch(args.push_branch, root, cfg_path)
+        return
+
+    # --- --update-skeleton 模式 ---
+    if args.update_skeleton:
+        pull_skeleton(root, cfg_path)
+        return
+
+    # --- --branch 模式 ---
+    if args.branch:
+        pull_branch(args.branch, root, cfg_path)
         return
 
     # --- list 子命令 ---
@@ -423,12 +516,21 @@ def main():
   python -m zpull modules/led bsp/bsp_i2c  拉取多个模块
   python -m zpull                          拉取 modules.yaml 中 sparse 列表的所有模块
 
+拉取分支:
+    python -m zpull --branch project/uart    拉取 project/uart 分支最新状态
+
 拉取标签 (完整项目快照):
   python -m zpull --tag template           拉取空骨架
   python -m zpull --tag uart               拉取 uart 标签版本
 
+推送分支:
+    python -m zpull --push-branch project/uart  当前工程同步到项目分支
+
 上传标签:
   python -m zpull --push-tag uart          当前项目快照打标签推送 (不影响 main)
+
+同步骨架:
+    python -m zpull --update-skeleton        从 ref 更新 always 中的最新骨架
 
 查询:
   python -m zpull list tags                列出远程仓库的所有标签
@@ -460,13 +562,9 @@ def main():
             rmtree(tmp)
 
         if tag == "template":
-            # 骨架模式: 从 template 标签只拉 always 目录
-            always = mod.get("always", []) or []
-            shallow = set(mod.get("shallow", []))
-            repo = Repo(_resolve_module_repo(mod, "repo"), "template", tmp)
-            print("[skeleton] 从 'template' 拉取骨架")
-            repo.clone_sparse(always)
-            replace_from(tmp, root, set(always), shallow_dirs=shallow)
+            # template 始终表示最新空骨架。
+            pull_skeleton(root, cfg_path)
+            return
         else:
             # 完整版本: 从 git 标签全量拉取
             repo = Repo(_resolve_module_repo(mod, "repo"), tag, tmp)

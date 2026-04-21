@@ -1,12 +1,13 @@
 # zpull 使用手册
 
-`zpull` 用来管理 Zephyr 工程里的模块、骨架文件和标签快照。
+`zpull` 用来管理 Zephyr 工程里的模块、骨架文件、项目分支和标签快照。
 
-你可以把它理解成三件事：
+你可以把它理解成四件事：
 
 1. 从远端仓库按需下拉模块
 2. 一键恢复某个标签对应的完整工程
-3. 把当前工程状态回推成远端标签
+3. 拉取或同步某条持续演进的项目分支
+4. 把当前工程状态回推成远端标签
 
 ## 1. 安装前提
 
@@ -47,7 +48,7 @@ modules:
     push_repo: git@github-qingyu0310:qingyu0310/Zephyr_Components.git
     ref: main
     sparse: [modules/led, modules/key, bsp/bsp_uart]
-    always: [apps, thread, .vscode, src, .clangd, boards, config, prj.conf, CMakeLists.txt]
+    always: [.vscode, .clangd]
     shallow: [thread]
 ```
 
@@ -69,6 +70,12 @@ python -m zpull --tag template
 python -m zpull --tag key
 ```
 
+### 第五步：如果要拉某条项目分支
+
+```bash
+python -m zpull --branch project/uart
+```
+
 ## 4. modules.yaml 怎么写
 
 最常用字段如下：
@@ -81,6 +88,12 @@ python -m zpull --tag key
 | `sparse` | 否 | 执行 `python -m zpull` 时默认拉取的模块列表 |
 | `always` | 否 | 每次模块拉取时一起拉回的骨架路径 |
 | `shallow` | 否 | 骨架模式下只提取顶层文件、不提取子目录的路径 |
+
+建议的语义分工：
+
+- `ref`：骨架基准分支，例如 `main`
+- `--branch project/xxx`：持续演进的具体项目线
+- `--tag v1.0.0`：冻结发布版本
 
 ### 什么时候改 `repo`
 
@@ -99,17 +112,39 @@ python -m zpull --tag key
 
 ### `always` 里应该放什么
 
-建议把这些根骨架文件放进去：
+如果你的目标是“可直接编译、带板级初始化的起步工程”，建议把这些内容放进 `always`：
 
+- `.vscode`
+- `.clangd`
+- `apps`
+- `boards`
+- `src`
+- `config`
+- `thread`
 - `CMakeLists.txt`
 - `prj.conf`
+
+建议标准：
+
+- 放进去的内容应该是“模板骨架”，即你希望 `--tag template` 和 `--update-skeleton` 始终跟随最新版本的内容
+- 如果你希望模板一拉下来就能编译并带板级初始化，那么工程入口、板级配置和构建入口就应该进 `always`
+
+如果你想要的是“轻骨架”，那下面这些通常不建议放进 `always`：
+
 - `apps`
-- `thread`
 - `src`
+- `thread`
 - `boards`
 - `config`
+- `prj.conf`
+- `CMakeLists.txt`
 
-只要它们在 `always` 里，清空工程后重新下拉就能恢复。
+这些内容更适合跟随项目分支或业务 tag 冻结。
+
+也就是说，这里有两种合法用法：
+
+- 起步工程模式：把可编译、可初始化所需文件放进 `always`
+- 轻骨架模式：只保留编辑器配置、格式化配置等轻量模板内容
 
 ## 5. 常用命令手册
 
@@ -168,6 +203,40 @@ python -m zpull --tag template
 - 刚执行过 `clean`
 - 只想恢复基础工程，不想拉具体模块
 
+### 拉项目分支
+
+```bash
+python -m zpull --branch project/uart
+python -m zpull --branch project/blink
+```
+
+行为：
+
+- 对指定分支做完整浅克隆
+- 完整提取该分支下的工程文件
+
+适合：
+
+- 你要恢复某个持续演进的项目线
+- 你想拿到某个项目当前最新状态，而不是固定 tag
+
+### 同步最新骨架
+
+```bash
+python -m zpull --update-skeleton
+```
+
+行为：
+
+- 使用 `repo` + `ref`
+- 只更新 `always` 中声明的骨架路径
+- 不影响业务 tag 的完整快照语义
+
+适合：
+
+- 你已经有一个工程，只想把模板骨架更新到最新
+- 不想重新拉模块，也不想覆盖业务 tag 的冻结语义
+
 ### 拉完整标签快照
 
 ```bash
@@ -183,6 +252,7 @@ python -m zpull --tag blink
 注意：
 
 - 这是完整快照恢复，不是 sparse-checkout
+- 业务 tag 会保留打 tag 当时的 `apps`、`boards`、`config`、`prj.conf`、`CMakeLists.txt` 等配置
 - 如果远端标签里已经带了 `build/`、`compile_commands.json`，它们也会被提取出来
 
 ### 列标签
@@ -218,6 +288,25 @@ python -m zpull --push-tag key
 - `ref` 必须是可推送分支，不能写成标签名
 - 如果没写 `push_repo`，会退回使用 `repo`
 - `--push-tag` 当前会自动覆盖远端同名标签
+
+### 推送当前工程到项目分支
+
+```bash
+python -m zpull --push-branch project/uart
+```
+
+行为：
+
+1. 用 `push_repo` 克隆远端 `ref` 分支
+2. 如果目标分支已存在，则切过去并同步最新状态
+3. 如果目标分支不存在，则从 `ref` 创建该分支
+4. 把当前工程同步到该分支并推送
+
+说明：
+
+- 适合保存“持续演进”的项目线
+- 不会创建 tag
+- 如果没写 `push_repo`，会退回使用 `repo`
 
 ### 清空当前工程
 
@@ -260,7 +349,25 @@ python -m zpull clean --yes
 python -m zpull
 ```
 
-### 场景 D：把当前工程打成远端标签
+### 场景 D：只同步骨架到最新
+
+```bash
+python -m zpull --update-skeleton
+```
+
+### 场景 E：拉取某个项目分支
+
+```bash
+python -m zpull --branch project/uart
+```
+
+### 场景 F：把当前工程同步到项目分支
+
+```bash
+python -m zpull --push-branch project/uart
+```
+
+### 场景 G：把当前工程打成远端标签
 
 ```bash
 python -m zpull --push-tag key
