@@ -30,7 +30,7 @@ namespace thread::led
 {
     constexpr uint8_t N = 3;
     inline Thread<Led, N> thread_{};
-    void thread_start(uint8_t prio);
+    void thread_start(uint8_t prio, void* p2 = nullptr, void* p3 = nullptr);
 }
 
 

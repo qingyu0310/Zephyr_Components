@@ -37,9 +37,9 @@ static void Task(void* p1, void* p2, void* p3)
     }
 }
 
-void led::thread_start(uint8_t prio)
+void led::thread_start(uint8_t prio, void* p2, void* p3)
 {
-    led::thread_.Start(prio, Task);
+    led::thread_.Start(prio, Task, p2, p3);
 }
 
 
