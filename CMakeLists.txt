@@ -15,8 +15,36 @@ if(BOARD MATCHES "^ek_ra2l1")
 elseif(BOARD MATCHES "^stm32f4_disco")
     set(BOARD_FLASH_RUNNER openocd)
     set(BOARD_DEBUG_RUNNER openocd)
-    set(BOARD_RUNNER_ARGS_openocd "--config=${CMAKE_CURRENT_SOURCE_DIR}/config/openocd_dap.cfg" "--cmd-post-verify=reset run")
+  set(BOARD_RUNNER_ARGS_openocd "--config=${CMAKE_CURRENT_SOURCE_DIR}/config/openocd_dap.cfg")
 endif()
+
+# 自动收集各组件目录下的 module.conf，并在 Zephyr 配置阶段一并合入。
+set(AUTO_EXTRA_CONF_FILES "")
+function(collect_component_conf container_dir conf_name)
+  if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${container_dir})
+    return()
+  endif()
+
+  file(GLOB CHILDREN RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/${container_dir} ${CMAKE_CURRENT_SOURCE_DIR}/${container_dir}/*)
+  foreach(child ${CHILDREN})
+    set(child_dir ${CMAKE_CURRENT_SOURCE_DIR}/${container_dir}/${child})
+    set(conf_file ${child_dir}/${conf_name})
+    if(IS_DIRECTORY ${child_dir} AND EXISTS ${child_dir}/CMakeLists.txt AND EXISTS ${conf_file})
+      list(APPEND AUTO_EXTRA_CONF_FILES ${conf_file})
+    endif()
+  endforeach()
+
+  set(AUTO_EXTRA_CONF_FILES ${AUTO_EXTRA_CONF_FILES} PARENT_SCOPE)
+endfunction()
+
+collect_component_conf(bsp module.conf)
+collect_component_conf(modules module.conf)
+collect_component_conf(controller module.conf)
+
+if(AUTO_EXTRA_CONF_FILES)
+  set(EXTRA_CONF_FILE "${AUTO_EXTRA_CONF_FILES}" CACHE STRING "Extra Zephyr conf files" FORCE)
+endif()
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(blinky)
 

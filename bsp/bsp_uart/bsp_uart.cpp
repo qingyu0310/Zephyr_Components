@@ -66,7 +66,7 @@ static void uart_async_cb(const device* dev, uart_event* evt, void* user_data)
 
 /* --------------------------------- public --------------------------------- */
 
-int32_t bsp_uart_init(BspUartObj& obj, const device* dev, uint32_t rx_timeout)
+int bsp_uart_init(BspUartObj& obj, const device* dev, uint32_t rx_timeout)
 {
     obj.dev        = dev;
     obj.head       = 0;
@@ -99,7 +99,7 @@ void bsp_uart_set_rx_callback(BspUartObj& obj, BspUartRxCallback cb, void* arg)
     obj.rx_cb_arg = arg;
 }
 
-int32_t bsp_uart_send(const BspUartObj& obj, const uint8_t* data, uint16_t len)
+int bsp_uart_send(const BspUartObj& obj, const uint8_t* data, uint16_t len)
 {
     if (!obj.ready) {
         return -ENODEV;
@@ -110,7 +110,20 @@ int32_t bsp_uart_send(const BspUartObj& obj, const uint8_t* data, uint16_t len)
     return uart_tx(obj.dev, data, len, SYS_FOREVER_US);
 }
 
-int32_t bsp_uart_read(BspUartObj& obj, uint8_t* data, uint16_t len)
+int bsp_uart_send_poll(const BspUartObj& obj, const uint8_t* data, uint16_t len)
+{
+    if (!obj.ready) {
+        return -ENODEV;
+    }
+
+    for (uint16_t i = 0; i < len; i++) {
+        uart_poll_out(obj.dev, data[i]);
+    }
+
+    return len;
+}
+
+int bsp_uart_read(BspUartObj& obj, uint8_t* data, uint16_t len)
 {
     if (!obj.ready) {
         return -ENODEV;

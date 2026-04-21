@@ -16,7 +16,23 @@
             ],
             "gdbPath": "D:/Zephyr/zephyr-sdk-0.16.8/arm-zephyr-eabi/bin/arm-zephyr-eabi-gdb.exe",
             "serverpath": "C:/Program Files/Path/openocd/bin/openocd.exe",
+            "openOCDPreConfigLaunchCommands": [
+                "adapter speed 100"
+            ],
+            "openOCDLaunchCommands": [
+                "reset_config srst_only srst_nogate connect_assert_srst",
+                "adapter srst delay 100",
+                "adapter srst pulse_width 100",
+                "init",
+                "halt",
+                "reset_config none",
+                "cortex_m reset_config sysresetreq"
+            ],
+            "preLaunchCommands": [
+                "monitor halt"
+            ],
             "runToEntryPoint": "main",
+            "showDevDebugOutput": "raw",
             "svdFile": "${workspaceFolder}/build/zephyr/zephyr.svd"
         }
     ]
